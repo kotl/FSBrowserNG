@@ -21,19 +21,28 @@
 #include <ArduinoOTA.h>
 #include <ArduinoJson.h>
 
-#define RELEASE  // Comment to enable debug output
+// To use debug features, simply defined FS_WEBSERVER_DEBUG in your own code.
+
+#ifndef FS_WEBSERVER_DEBUG
+#define FS_WEBSERVER_RELEASE
+#endif
+
+#ifdef FS_WEBSERVER_DEBUG
+#define FS_WEBSERVER_ARDUINO_OTA
+#endif
 
 #define DBG_OUTPUT_PORT Serial
 
-#ifndef RELEASE
+#ifndef FS_WEBSERVER_RELEASE
 #define DEBUGLOG(...) DBG_OUTPUT_PORT.printf(__VA_ARGS__)
 #else
 #define DEBUGLOG(...)
 #endif
 
 #define CONNECTION_LED 2 // Connection LED pin (Built in). -1 to disable
+#ifndef AP_ENABLE_BUTTON
 #define AP_ENABLE_BUTTON 4 // Button pin to enable AP during startup for configuration. -1 to disable
-
+#endif
 
 #define CONFIG_FILE "/config.json"
 #define SECRET_FILE "/secret.json"
@@ -56,7 +65,6 @@ typedef struct {
 typedef struct {
     String APssid = "ESP"; // ChipID is appended to this name
     String APpassword = "12345678";
-    bool APenable = false; // AP disabled by default
 } strApConfig;
 
 typedef struct {
@@ -73,6 +81,7 @@ public:
 
 
 protected:
+    bool _default_config = false;
     strConfig _config; // General and WiFi configuration
     strApConfig _apConfig; // Static AP config settings
     strHTTPAuth _httpAuth;
@@ -108,6 +117,13 @@ protected:
 
     String getMacAddress();
 
+    // Override in case you need to determine when AP should be up on start.
+    // Typically you want to still use _default_config and always return true
+    // if _default_config is true. Otherwise, it's up to you!
+    // Don't forget to #define AP_ENABLE_BUTTON -1 to disable that feature to
+    // avoid pin pullup.
+    bool isAPEnabled();
+
     bool checkAuth(AsyncWebServerRequest *request);
     void handleFileList(AsyncWebServerRequest *request);
     //void handleFileRead_edit_html(AsyncWebServerRequest *request);
@@ -134,7 +150,5 @@ protected:
     static unsigned char h2int(char c);
     static boolean checkRange(String Value);
 };
-
-extern AsyncFSWebServer ESPHTTPServer;
 
 #endif // _FSWEBSERVERLIB_h

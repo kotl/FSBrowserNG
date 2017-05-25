@@ -6,7 +6,6 @@
 #include "FSWebServerLib.h"
 #include <StreamString.h>
 
-AsyncFSWebServer ESPHTTPServer(80);
 
 const char Page_WaitAndReload[] PROGMEM = R"=====(
 <meta http-equiv="refresh" content="10; URL=/config.html">
@@ -82,9 +81,11 @@ void AsyncFSWebServer::begin(FS* fs) {
     _fs = fs;
     DBG_OUTPUT_PORT.begin(115200);
     DBG_OUTPUT_PORT.print("\n\n");
-#ifndef RELEASE
+#ifndef FS_WEBSERVER_RELEASE
+
     DBG_OUTPUT_PORT.setDebugOutput(true);
-#endif // RELEASE
+#endif // FS_WEBSERVER_RELEASE
+
     // NTP client setup
     if (CONNECTION_LED >= 0) {
         pinMode(CONNECTION_LED, OUTPUT); // CONNECTION_LED pin defined as output
@@ -94,18 +95,14 @@ void AsyncFSWebServer::begin(FS* fs) {
     }
     //analogWriteFreq(200);
 
-    if (AP_ENABLE_BUTTON >= 0) {
-        _apConfig.APenable = !digitalRead(AP_ENABLE_BUTTON); // Read AP button. If button is pressed activate AP
-        DEBUGLOG("AP Enable = %d\n", _apConfig.APenable);
-    }
-
     if (CONNECTION_LED >= 0) {
         digitalWrite(CONNECTION_LED, HIGH); // Turn LED off
     }
 
     if (!_fs) // If SPIFFS is not started
         _fs->begin();
-#ifndef RELEASE
+#ifndef FS_WEBSERVER_RELEASE
+
     { // List files
         Dir dir = _fs->openDir("/");
         while (dir.next()) {
@@ -116,10 +113,11 @@ void AsyncFSWebServer::begin(FS* fs) {
         }
         DEBUGLOG("\n");
     }
-#endif // RELEASE
+#endif // FS_WEBSERVER_RELEASE
+
     if (!load_config()) { // Try to load configuration from file system
         defaultConfig(); // Load defaults if any error
-        _apConfig.APenable = true;
+        _default_config = true;
     }
     loadHTTPAuth();
     //WIFI INIT
@@ -135,12 +133,8 @@ void AsyncFSWebServer::begin(FS* fs) {
         this->onWiFiDisconnected(data);
     });
     WiFi.hostname(_config.deviceName.c_str());
-    if (AP_ENABLE_BUTTON >= 0) {
-        if (_apConfig.APenable) {
-            configureWifiAP(); // Set AP mode if AP button was pressed
-        } else {
-            configureWifi(); // Set WiFi config
-        }
+    if (isAPEnabled()) {
+        configureWifiAP(); // Set AP mode if AP button was pressed
     } else {
         configureWifi(); // Set WiFi config
     }
@@ -193,7 +187,8 @@ bool AsyncFSWebServer::load_config() {
         DEBUGLOG("Failed to parse config file\r\n");
         return false;
     }
-#ifndef RELEASE
+#ifndef FS_WEBSERVER_RELEASE
+
     String temp;
     json.prettyPrintTo(temp);
     Serial.println(temp);
@@ -299,7 +294,8 @@ bool AsyncFSWebServer::save_config() {
         return false;
     }
 
-#ifndef RELEASE
+#ifndef FS_WEBSERVER_RELEASE
+
     String temp;
     json.prettyPrintTo(temp);
     Serial.println(temp);
@@ -344,20 +340,24 @@ bool AsyncFSWebServer::loadHTTPAuth() {
     JsonObject& json = jsonBuffer.parseObject(buf.get());
 
     if (!json.success()) {
-#ifndef RELEASE
+#ifndef FS_WEBSERVER_RELEASE
+
         String temp;
         json.prettyPrintTo(temp);
         DBG_OUTPUT_PORT.println(temp);
         DBG_OUTPUT_PORT.println("Failed to parse secret file");
-#endif // RELEASE
+#endif // FS_WEBSERVER_RELEASE
+
         _httpAuth.auth = false;
         return false;
     }
-#ifndef RELEASE
+#ifndef FS_WEBSERVER_RELEASE
+
     String temp;
     json.prettyPrintTo(temp);
     DBG_OUTPUT_PORT.println(temp);
-#endif // RELEASE
+#endif // FS_WEBSERVER_RELEASE
+
 
     _httpAuth.auth = json["auth"];
     _httpAuth.wwwUsername = json["user"].as<String>();
@@ -440,7 +440,8 @@ void AsyncFSWebServer::ConfigureOTA(String password) {
         DEBUGLOG("OTA password set %s\n", password.c_str());
     }
 
-#ifndef RELEASE
+#ifdef FS_WEBSERVER_ARDUINO_OTA
+
     ArduinoOTA.onStart([]() {
         DEBUGLOG("StartOTA\r\n");
     });
@@ -460,7 +461,8 @@ void AsyncFSWebServer::ConfigureOTA(String password) {
         else if (error == OTA_END_ERROR) DEBUGLOG("End Failed\r\n");
     });
     DEBUGLOG("\r\nOTA Ready\r\n");
-#endif // RELEASE
+#endif // FS_WEBSERVER_RELEASE
+
     ArduinoOTA.begin();
 }
 
@@ -987,11 +989,13 @@ bool AsyncFSWebServer::saveHTTPAuth() {
         return false;
     }
 
-#ifndef RELEASE
+#ifndef FS_WEBSERVER_RELEASE
+
     String temp;
     json.prettyPrintTo(temp);
     Serial.println(temp);
-#endif // RELEASE
+#endif // FS_WEBSERVER_RELEASE
+
 
     json.printTo(configFile);
     configFile.flush();
@@ -1304,4 +1308,13 @@ bool AsyncFSWebServer::checkAuth(AsyncWebServerRequest *request) {
         return request->authenticate(_httpAuth.wwwUsername.c_str(), _httpAuth.wwwPassword.c_str());
     }
 
+}
+
+bool AsyncFSWebServer::isAPEnabled() {
+    if (AP_ENABLE_BUTTON >= 0) {
+        bool enable = !digitalRead(AP_ENABLE_BUTTON);
+        DEBUGLOG("AP Enable = %d\n", enable);
+        return enable; // Read AP button. If button is pressed activate AP
+    }
+    return _default_config;
 }
